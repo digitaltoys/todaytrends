@@ -1,9 +1,9 @@
 # 개발 할 일 목록 (TODO)
 
 ## 1. 프로젝트 설정 및 기본 환경 구축 (난이도: 2/5)
-- [ ] 1.1. 프론트엔드 프로젝트 생성 (Vite, React, TypeScript)
-  - [ ] 1.1.1. 기본 폴더 구조 설정
-  - [ ] 1.1.2. 필요한 라이브러리 설치 (Tailwind CSS, Zustand 등)
+- [X] 1.1. 프론트엔드 프로젝트 생성 (Vite, React, TypeScript) - Tailwind 공식 Vite 가이드 적용
+  - [X] 1.1.1. 기본 폴더 구조 설정 (`src` 내 `components`, `pages`, `store`, `styles` 폴더 생성)
+  - [X] 1.1.2. 필요한 라이브러리 설치 (Tailwind CSS via `@tailwindcss/vite`, Zustand 등)
 - [ ] 1.2. 백엔드 환경 설정 (CouchDB)
   - [ ] 1.2.1. CouchDB 설치 및 기본 설정
   - [ ] 1.2.2. 데이터베이스 생성
