@@ -13,15 +13,28 @@ import unittest
 from unittest.mock import MagicMock, patch
 import os
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+
+# .env 파일 로드 (테스트 실행 시 환경 변수 설정을 위해)
+# 이 테스트 파일(test_twitter_collector.py)은 server/src/collectors/ 에 위치.
+# .env 파일은 프로젝트 루트 (server 폴더의 부모)에 있다고 가정 (../../.env).
+dotenv_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env')
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path=dotenv_path)
+    print(f"Test: Loaded .env from {dotenv_path}") # 로드 확인용 로그 (테스트 시에만)
+else:
+    load_dotenv() # 기본 경로에서 찾기
+    print("Test: .env file not found at specific path, attempting default load_dotenv().")
 
 
 class TestTwitterCollector(unittest.TestCase):
 
     def setUp(self):
         """테스트 시작 전 실행되는 메소드"""
-        self.mock_bearer_token = "test_bearer_token"
-        self.mock_couchdb_url = "http://fakecouch:5984/"
-        self.mock_couchdb_db_name = "test_memes_db"
+        # .env 파일이나 실제 환경 변수에서 값을 가져오도록 시도하고, 없으면 기본 모의 값 사용
+        self.mock_bearer_token = os.getenv("TWITTER_BEARER_TOKEN", "test_bearer_token_default")
+        self.mock_couchdb_url = os.getenv("COUCHDB_URL", "http://fakecouch:5984/")
+        self.mock_couchdb_db_name = os.getenv("COUCHDB_MEME_DB_NAME", "test_memes_db_default")
 
         # CouchDBHandler 모의 객체 생성
         self.mock_db_handler_instance = MagicMock(spec=CouchDBHandler)
@@ -30,12 +43,16 @@ class TestTwitterCollector(unittest.TestCase):
         self.mock_db_handler_instance.get_doc.return_value = None
 
         # tweepy.Client 모의 객체 생성
-        self.mock_tweepy_client_instance = MagicMock(spec=tweepy.Client) # spec을 tweepy.Client로 명시
+        self.mock_tweepy_client_instance = MagicMock(spec=tweepy.Client)
 
-        # 환경 변수 설정
-        os.environ["TWITTER_BEARER_TOKEN"] = self.mock_bearer_token
-        os.environ["COUCHDB_URL"] = self.mock_couchdb_url
-        os.environ["COUCHDB_MEME_DB_NAME"] = self.mock_couchdb_db_name
+        # os.environ을 직접 설정하는 부분은 .env 로드로 대체되었으므로 주석 처리 또는 삭제 가능.
+        # 테스트의 일관성을 위해 명시적으로 테스트용 값을 사용할 수도 있으나,
+        # .env 로드 테스트를 겸한다면 실제 로드된 값을 사용하거나,
+        # 테스트별로 필요한 환경변수를 patch.dict(os.environ, {...})로 설정하는 것이 좋음.
+        # 여기서는 setUp에서 os.getenv를 사용하므로, 아래 os.environ 설정은 제거합니다.
+        # os.environ["TWITTER_BEARER_TOKEN"] = self.mock_bearer_token
+        # os.environ["COUCHDB_URL"] = self.mock_couchdb_url
+        # os.environ["COUCHDB_MEME_DB_NAME"] = self.mock_couchdb_db_name
 
         # Patching 경로 수정: 실제 코드가 위치한 경로를 기준으로 패치
         self.patcher_db_handler = patch('server.src.collectors.twitter_collector.CouchDBHandler', return_value=self.mock_db_handler_instance)
@@ -55,13 +72,17 @@ class TestTwitterCollector(unittest.TestCase):
         """테스트 종료 후 실행되는 메소드"""
         self.patcher_db_handler.stop()
         self.patcher_tweepy_client.stop()
-        # 환경 변수 원복 (필요시)
-        del os.environ["TWITTER_BEARER_TOKEN"]
-        del os.environ["COUCHDB_URL"]
-        del os.environ["COUCHDB_MEME_DB_NAME"]
+        # .env 파일 로드로 변경했으므로 tearDown에서 os.environ을 직접 삭제할 필요가 없습니다.
+        # 만약 특정 테스트 케이스에서만 환경 변수를 임시로 설정하고 싶다면
+        # unittest.mock.patch.dict를 사용하는 것이 좋습니다.
+        # 아래 del 라인들은 주석 처리하거나 삭제합니다.
+        # del os.environ["TWITTER_BEARER_TOKEN"]
+        # del os.environ["COUCHDB_URL"]
+        # del os.environ["COUCHDB_MEME_DB_NAME"]
 
     def test_initialization(self):
         """TwitterCollector 초기화 테스트"""
+        # TwitterCollector 생성자에 전달된 값 (os.getenv 결과)으로 호출되는지 확인
         self.MockTweepyClient.assert_called_once_with(bearer_token=self.mock_bearer_token, wait_on_rate_limit=True)
         self.MockCouchDBHandler.assert_called_once_with(self.mock_couchdb_url, self.mock_couchdb_db_name, username=None, password=None)
         self.assertIsNotNone(self.collector.client)
@@ -70,57 +91,28 @@ class TestTwitterCollector(unittest.TestCase):
 
     def test_search_recent_tweets_success(self):
         """최근 트윗 검색 성공 테스트 (API v2)"""
-        # search_recent_tweets 메소드가 반환해야 하는 enriched_dict 형태를 직접 모의
-        mock_enriched_tweet = {
-            'id': '123',
-            'text': 'Test tweet #meme',
-            'created_at': '2023-01-01T12:00:00.000Z',
-            'author_id': 'user1',
-            'public_metrics': {'like_count': 10, 'retweet_count': 5},
-            'entities': {'hashtags': [{'tag': 'meme'}]},
-            'author': { # 병합된 사용자 정보
-                'id': 'user1',
-                'username': 'testuser',
-                'name': 'Test User',
-                'profile_image_url': 'http://example.com/user.jpg'
-            },
-            'attachments_media': [] # 미디어 없음
-        }
-
-        # TwitterCollector.search_recent_tweets 메소드를 직접 패치하여 모의된 enriched_dict 리스트를 반환하도록 설정
-        # 이렇게 하면 search_recent_tweets 내부의 tweepy.Client 호출 및 데이터 병합 로직을 테스트하지 않고,
-        # search_recent_tweets의 "계약" (반환값 형태)만을 테스트하게 됨.
-        # 만약 search_recent_tweets 내부 로직을 더 상세히 테스트하고 싶다면, 이전 방식처럼 tweepy.Response를 모의해야 함.
-        # 여기서는 search_recent_tweets의 최종 반환값에 집중하여 테스트를 수정.
-
-        # self.collector.search_recent_tweets를 모의 객체로 대체
-        # @patch.object(TwitterCollector, 'search_recent_tweets') 와 유사한 효과를 내기 위해
-        # collector 인스턴스의 메소드를 직접 MagicMock으로 교체하는 것은 지양.
-        # 대신, tweepy.Client의 search_recent_tweets가 특정 tweepy.Response를 반환하고,
-        # 그 Response를 기반으로 collector.search_recent_tweets가 올바른 enriched_dict를 만드는지 확인.
-
-        # tweepy.Client().search_recent_tweets()가 반환할 tweepy.Response 모의
         mock_api_response = MagicMock(spec=tweepy.Response)
         mock_tweet_api_obj = MagicMock(spec=tweepy.Tweet)
-        mock_tweet_api_obj.data = {
+        mock_tweet_api_obj.author_id = 'user1' # tweepy.Tweet 객체의 author_id
+        mock_tweet_api_obj.data = { # tweepy.Tweet.data는 dict
             'id': '123', 'text': 'Test tweet #meme', 'created_at': '2023-01-01T12:00:00.000Z',
-            'author_id': 'user1', 'public_metrics': {'like_count': 10, 'retweet_count': 5},
+            'author_id': 'user1', # data 내부의 author_id (일관성을 위해)
+            'public_metrics': {'like_count': 10, 'retweet_count': 5},
             'entities': {'hashtags': [{'tag': 'meme'}]}
         }
-        mock_tweet_api_obj.author_id = 'user1'
         mock_tweet_api_obj.attachments = None
 
         mock_user_api_obj = MagicMock(spec=tweepy.User)
-        mock_user_api_obj.id = 'user1' # user.id를 사용하므로 id 속성 설정
-        mock_user_api_obj.data = {
-            # 'id': 'user1', # data dict 안의 id는 users dict 생성 시 사용되지 않음
+        mock_user_api_obj.id = 'user1' # tweepy.User 객체의 id (users 딕셔너리 키로 사용됨)
+        mock_user_api_obj.data = { # tweepy.User.data는 dict
+            'id': 'user1', # data 내부의 id (일관성을 위해)
             'username': 'testuser',
             'name': 'Test User',
             'profile_image_url': 'http://example.com/user.jpg'
         }
 
-        mock_api_response.data = [mock_tweet_api_obj]
-        mock_api_response.includes = {'users': [mock_user_api_obj]} # includes의 users 리스트
+        mock_api_response.data = [mock_tweet_api_obj] # API 응답의 data는 Tweet 객체 리스트
+        mock_api_response.includes = {'users': [mock_user_api_obj]} # includes의 users는 User 객체 리스트
 
         self.mock_tweepy_client_instance.search_recent_tweets.return_value = mock_api_response
 

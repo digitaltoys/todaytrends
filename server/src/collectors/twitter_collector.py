@@ -4,12 +4,25 @@ import tweepy
 import os
 import json
 from datetime import datetime
+from dotenv import load_dotenv # .env 파일 로드를 위해 추가
+
+# .env 파일 로드
+# 이 스크립트(twitter_collector.py)가 server/src/collectors/ 에 위치하고,
+# .env 파일이 프로젝트 루트 (server 폴더의 부모)에 있다고 가정합니다.
+# 즉, ../../.env 경로가 됩니다.
+dotenv_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env')
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path=dotenv_path)
+else:
+    # .env 파일이 현재 작업 디렉토리 또는 기본 경로에 있을 경우를 대비
+    load_dotenv()
+
 
 # src/collectors/twitter_collector.py
 
 import tweepy
-import os
-import json
+# import os # 이미 위에서 import 함
+# import json # 이미 위에서 import 함
 from datetime import datetime, timezone
 import logging
 
