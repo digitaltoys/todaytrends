@@ -27,7 +27,10 @@ from datetime import datetime, timezone
 import logging
 
 # db_handler.py에서 CouchDBHandler 클래스를 가져옵니다.
-from ..db_handler import CouchDBHandler # 상대 경로 임포트 수정
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from db_handler import CouchDBHandler
 
 # 로거 설정
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -173,33 +176,43 @@ class TwitterCollector:
 
         return False
 
-    def collect_meme_tweets(self, query, count=100):
+    def collect_trending_tweets(self, count=100):
         """
-        주어진 쿼리로 밈 관련 트윗을 수집하고 필터링합니다.
-        주어진 쿼리로 밈 관련 트윗을 수집하고 필터링합니다. (API v2 사용)
-        :param query: 검색할 키워드 또는 해시태그
-        :param count: 가져올 최대 트윗 수 (10-100), API v2의 max_results에 해당
-        :return: 정규화된 밈 트윗 데이터 리스트
+        일반 트렌딩 트윗들을 수집합니다 (특정 키워드 필터링 없음).
+        :param count: 수집할 트윗 수 (10-100)
+        :return: 정규화된 트윗 데이터 리스트
         """
-        # API v2의 max_results 파라미터 이름에 맞게 내부적으로 변수명 사용 일치
         max_results = count
-        logger.info(f"'{query}' 관련 밈 트윗 수집 시작 (API v2, max_results={max_results})")
+        logger.info(f"트렌딩 트윗 수집 시작 (API v2, max_results={max_results})")
 
-        raw_tweets_enriched = self.search_recent_tweets(query, max_results=max_results)
-        meme_tweets_data = []
+        # 인기 있는 트윗을 찾기 위한 일반적인 쿼리
+        # 리트윗 제외, 한국어로 제한
+        trending_query = "lang:ko -is:retweet"
+        
+        raw_tweets_enriched = self.search_recent_tweets(trending_query, max_results=max_results)
+        trending_tweets_data = []
 
         if not raw_tweets_enriched:
-            logger.warning(f"'{query}'에 대한 API v2 검색 결과가 없습니다.")
+            logger.warning("트렌딩 트윗에 대한 API v2 검색 결과가 없습니다.")
             return []
 
         for tweet_dict in raw_tweets_enriched:
-            if self._is_meme_content_v2(tweet_dict):
-                normalized_tweet = self._normalize_tweet_data_v2(tweet_dict)
-                if normalized_tweet:
-                    meme_tweets_data.append(normalized_tweet)
+            # 모든 트윗을 수집 (특정 콘텐츠 필터링 제거)
+            normalized_tweet = self._normalize_tweet_data_v2(tweet_dict)
+            if normalized_tweet:
+                # CouchDB에 저장
+                try:
+                    success = self.db_handler.save_document(normalized_tweet)
+                    if success:
+                        trending_tweets_data.append(normalized_tweet)
+                        logger.info(f"트렌딩 트윗 저장 성공: {normalized_tweet['_id']}")
+                    else:
+                        logger.warning(f"트렌딩 트윗 저장 실패: {normalized_tweet['_id']}")
+                except Exception as e:
+                    logger.error(f"트렌딩 트윗 저장 중 오류: {e}")
 
-        logger.info(f"'{query}' 관련 밈 트윗 {len(meme_tweets_data)}개 최종 수집 (API v2)")
-        return meme_tweets_data
+        logger.info(f"트렌딩 트윗 {len(trending_tweets_data)}개 최종 수집 (API v2)")
+        return trending_tweets_data
 
     def _is_meme_content_v2(self, tweet_dict):
         """
@@ -214,10 +227,19 @@ class TwitterCollector:
                 if media.get('type') in ['photo', 'video', 'animated_gif']: # animated_gif는 API v2에서 video로 처리될 수 있음
                     return True
 
-        # 2. 텍스트 내 특정 키워드 확인
-        meme_keywords = ["#meme", "#밈", "웃긴", "유머", "챌린지", "ㅋㅋㅋ", "짤"]
+        # 2. 텍스트 내 특정 키워드 확인 (엔터테인먼트/문화 콘텐츠)
+        trend_keywords = [
+            # 심리 테스트 관련
+            "심리테스트", "MBTI", "성격테스트", "심리", "성격", "테스트",
+            # 놀이 문화 관련  
+            "챌린지", "게임", "퀴즈", "놀이", "재미", "장난",
+            # 밈/유머 관련
+            "#meme", "#밈", "웃긴", "유머", "ㅋㅋ", "짤", "개웃김",
+            # 트렌드 관련
+            "트렌드", "유행", "인기", "핫한", "화제"
+        ]
         text_to_check = tweet_dict.get('text', "").lower()
-        if any(keyword in text_to_check for keyword in meme_keywords):
+        if any(keyword.lower() in text_to_check for keyword in trend_keywords):
             return True
 
         # 3. 공용 측정치 기반 필터링 (예시, 임계값은 조정 필요)
@@ -226,6 +248,38 @@ class TwitterCollector:
         #     return True
 
         return False
+
+    def _categorize_content(self, text_content, hashtags):
+        """
+        트윗 내용을 기반으로 콘텐츠 카테고리를 분류합니다.
+        """
+        text_lower = text_content.lower()
+        hashtags_lower = [tag.lower() for tag in hashtags]
+        all_text = text_lower + " " + " ".join(hashtags_lower)
+        
+        categories = []
+        
+        # 심리/성격 테스트 관련
+        psychology_keywords = ["심리테스트", "mbti", "성격테스트", "심리", "성격", "테스트", "엠비티아이"]
+        if any(keyword in all_text for keyword in psychology_keywords):
+            categories.append("psychology")
+            
+        # 게임/놀이 관련
+        game_keywords = ["게임", "퀴즈", "놀이", "챌린지", "미니게임", "플레이"]
+        if any(keyword in all_text for keyword in game_keywords):
+            categories.append("game")
+            
+        # 밈/유머 관련
+        meme_keywords = ["밈", "meme", "웃긴", "유머", "짤", "개웃김", "ㅋㅋ"]
+        if any(keyword in all_text for keyword in meme_keywords):
+            categories.append("meme")
+            
+        # 트렌드/문화 관련
+        trend_keywords = ["트렌드", "유행", "인기", "핫한", "화제", "viral"]
+        if any(keyword in all_text for keyword in trend_keywords):
+            categories.append("trend")
+            
+        return categories if categories else ["general"]
 
     def _normalize_tweet_data_v2(self, tweet_dict):
         """
@@ -278,12 +332,16 @@ class TwitterCollector:
                     mentions = [mention['username'] for mention in entities_dict['mentions']]
 
             public_metrics_dict = tweet_dict.get('public_metrics', {})
+            
+            # 콘텐츠 카테고리 분류
+            text_content = tweet_dict.get('text', '')
+            content_categories = self._categorize_content(text_content, hashtags)
 
             normalized_data = {
                 "_id": doc_id,
                 "platform": "X",
                 "url": f"https://twitter.com/{author_username}/status/{tweet_id}" if author_username and tweet_id else None,
-                "text_content": tweet_dict.get('text'),
+                "text_content": text_content,
                 "author_id": author_id,
                 "author_name": author_name,
                 "author_username": author_username,
@@ -303,6 +361,7 @@ class TwitterCollector:
                 "location": None,
                 "language": tweet_dict.get('lang'),
                 "is_sensitive_content": tweet_dict.get('possibly_sensitive', False),
+                "content_categories": content_categories,  # 새로 추가된 카테고리 필드
                 "raw_data": tweet_dict
             }
             return normalized_data
@@ -388,18 +447,16 @@ if __name__ == '__main__':
             logger.error("CouchDB 핸들러 초기화 실패 또는 연결되지 않아 스크립트를 종료합니다.")
             exit(1)
 
-        # 1. 특정 키워드로 밈 트윗 수집 (API v2 사용)
-        keyword_query = "(#밈 OR #유머 OR #웃짤 OR #챌린지) -is:retweet" # 리트윗 제외, 키워드 그룹핑
-        logger.info(f"\n'{keyword_query}' 키워드로 밈 트윗 수집 중 (API v2)...")
+        # 1. 일반 트렌딩 트윗 수집 (API v2 사용)
+        logger.info(f"\n일반 트렌딩 트윗 수집 중 (API v2)...")
 
-        # collect_meme_tweets_v2 메소드 호출 (만약 이름을 변경했다면 해당 이름으로)
-        # 여기서는 collect_meme_tweets가 내부적으로 v2 API를 사용하도록 수정되었으므로 그대로 사용
-        meme_tweets_normalized = collector.collect_meme_tweets(keyword_query, max_results=15) # 테스트를 위해 max_results 줄임
+        # collect_trending_tweets 메소드 호출 - 특정 키워드 없이 인기 트윗 수집
+        trending_tweets_normalized = collector.collect_trending_tweets(count=30)
 
-        if meme_tweets_normalized:
-            logger.info(f"총 {len(meme_tweets_normalized)}개의 밈 관련 트윗을 정규화했습니다.")
-            for i, tweet_data in enumerate(meme_tweets_normalized[:2]): # 처음 2개만 상세 로깅
-                logger.info(f"\n--- 정규화된 밈 트윗 {i+1} ---")
+        if trending_tweets_normalized:
+            logger.info(f"총 {len(trending_tweets_normalized)}개의 트렌딩 트윗을 정규화했습니다.")
+            for i, tweet_data in enumerate(trending_tweets_normalized[:2]): # 처음 2개만 상세 로깅
+                logger.info(f"\n--- 정규화된 트렌딩 트윗 {i+1} ---")
                 logger.info(f"DB ID: {tweet_data.get('_id')}")
                 logger.info(f"사용자: @{tweet_data.get('author_username')}")
                 logger.info(f"내용: {tweet_data.get('text_content', '')[:100]}...")
@@ -409,11 +466,10 @@ if __name__ == '__main__':
                 logger.info(f"수집 시간: {tweet_data.get('collected_at')}")
                 logger.info(f"원본 URL: {tweet_data.get('url')}")
 
-            logger.info("\n정규화된 트윗을 CouchDB에 저장 시도...")
-            saved_count = collector.save_tweets_to_db(meme_tweets_normalized)
-            logger.info(f"{saved_count}개의 트윗이 성공적으로 DB에 저장/업데이트(시도)되었습니다.")
+            logger.info("\n정규화된 트윗을 CouchDB에 저장 완료 (collect_trending_tweets 메소드 내부에서 처리)")
+            logger.info(f"{len(trending_tweets_normalized)}개의 트윗이 성공적으로 DB에 저장되었습니다.")
         else:
-            logger.info(f"'{keyword_query}'에 대한 밈 관련 트윗을 찾지 못했거나 정규화하지 못했습니다.")
+            logger.info(f"트렌딩 트윗을 찾지 못했거나 정규화하지 못했습니다.")
 
     except tweepy.TweepyException as te:
         logger.error(f"Twitter API 관련 오류 발생: {te}", exc_info=True)

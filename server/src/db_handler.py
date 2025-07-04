@@ -190,6 +190,39 @@ class CouchDBHandler:
             logger.error(f"뷰 '{view_name}' 실행 중 오류 발생: {e}", exc_info=True)
             raise
 
+    def get_all_documents(self, include_docs=True, limit=None):
+        """
+        데이터베이스의 모든 문서를 가져옵니다.
+        :param include_docs: 문서 내용을 포함할지 여부 (기본값: True)
+        :param limit: 가져올 문서 수 제한 (기본값: None - 모든 문서)
+        :return: 문서 리스트
+        """
+        if not self.is_connected():
+            logger.error("CouchDB에 연결되지 않아 문서를 가져올 수 없습니다.")
+            return []
+        
+        try:
+            # _all_docs 뷰를 사용하여 모든 문서 가져오기
+            options = {'include_docs': include_docs}
+            if limit:
+                options['limit'] = limit
+                
+            results = self.db.view('_all_docs', **options)
+            
+            if include_docs:
+                # 문서 내용만 추출
+                documents = [row.doc for row in results if row.doc and not row.id.startswith('_design')]
+            else:
+                # 문서 ID만 추출
+                documents = [row.id for row in results if not row.id.startswith('_design')]
+            
+            logger.info(f"총 {len(documents)}개의 문서를 가져왔습니다.")
+            return documents
+            
+        except Exception as e:
+            logger.error(f"모든 문서 가져오기 중 오류 발생: {e}", exc_info=True)
+            return []
+
 # --- 사용 예시 (테스트용) ---
 if __name__ == '__main__':
     # 로깅 기본 설정 (파일 실행 시에만 적용되도록)
