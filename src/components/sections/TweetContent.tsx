@@ -9,13 +9,14 @@ interface TweetContentProps {
   loading: boolean;
   error: string | null;
   tweets: Tweet[];
-  viewMode: 'recent' | 'hashtag' | 'category';
+  viewMode: 'recent' | 'hashtag' | 'category' | '24hours';
   selectedCategory: string;
   totalCount: number;
   searchTerm: string;
   setSearchTerm: (term: string) => void;
   clearError: () => void;
   onViewRecent: () => void;
+  onView24Hours: () => void;
   onSearch: (e: React.FormEvent) => void;
   onCategoryFilter: (category: string) => void;
 }
@@ -31,6 +32,7 @@ export function TweetContent({
   setSearchTerm,
   clearError,
   onViewRecent,
+  onView24Hours,
   onSearch,
   onCategoryFilter
 }: TweetContentProps) {
@@ -52,6 +54,7 @@ export function TweetContent({
         tweets={tweets}
         onSearch={onSearch}
         onViewRecent={onViewRecent}
+        onView24Hours={onView24Hours}
         onCategoryFilter={onCategoryFilter}
       />
 

@@ -6,6 +6,7 @@ interface DashboardStore extends DashboardState {
   // Actions
   fetchTweets: () => Promise<void>;
   fetchRecentTweets: () => Promise<void>;
+  fetchTweetsLast24Hours: () => Promise<void>;
   searchByHashtag: (hashtag: string) => Promise<void>;
   deleteTweet: (tweetId: string) => Promise<void>;
   clearError: () => void;
@@ -97,6 +98,25 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  fetchTweetsLast24Hours: async () => {
+    set({ loading: true, error: null });
+    
+    try {
+      const tweets = await couchDBService.getTweetsLast24Hours();
+      set({ 
+        tweets,
+        totalCount: tweets.length,
+        loading: false,
+        lastUpdated: new Date().toISOString()
+      });
+    } catch (error) {
+      set({ 
+        loading: false, 
+        error: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
+      });
+    }
+  },
 
   refreshData: async () => {
     const { fetchRecentTweets } = get();

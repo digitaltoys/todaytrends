@@ -14,13 +14,14 @@ export function Dashboard() {
     totalCount,
     lastUpdated,
     fetchRecentTweets,
+    fetchTweetsLast24Hours,
     searchByHashtag,
     clearError,
     refreshData
   } = useDashboardStore();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [viewMode, setViewMode] = useState<'recent' | 'hashtag' | 'category'>('recent');
+  const [viewMode, setViewMode] = useState<'recent' | 'hashtag' | 'category' | '24hours'>('recent');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'tweets' | 'keywords'>('keywords');
 
@@ -41,6 +42,13 @@ export function Dashboard() {
     setSearchTerm('');
     setSelectedCategory('');
     fetchRecentTweets();
+  };
+
+  const handleView24Hours = () => {
+    setViewMode('24hours');
+    setSearchTerm('');
+    setSelectedCategory('');
+    fetchTweetsLast24Hours();
   };
 
   const handleCategoryFilter = (category: string) => {
@@ -88,6 +96,7 @@ export function Dashboard() {
             setSearchTerm={setSearchTerm}
             clearError={clearError}
             onViewRecent={handleViewRecent}
+            onView24Hours={handleView24Hours}
             onSearch={handleSearch}
             onCategoryFilter={handleCategoryFilter}
           />

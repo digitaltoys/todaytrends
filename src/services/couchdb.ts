@@ -152,6 +152,45 @@ class CouchDBService {
     }
   }
 
+  // 최근 24시간 트윗 가져오기
+  async getTweetsLast24Hours(limit = 50): Promise<Tweet[]> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/${this.dbName}/_all_docs?include_docs=true&limit=${limit * 2}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data: CouchDBResponse = await response.json();
+      
+      const now = new Date();
+      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      
+      const tweets = data.rows
+        .filter(row => row.doc && row.id.startsWith('twitter:'))
+        .map(row => row.doc as Tweet)
+        .filter(tweet => {
+          const collectedAt = new Date(tweet.collected_at);
+          return collectedAt >= twentyFourHoursAgo;
+        })
+        .sort((a, b) => new Date(b.collected_at).getTime() - new Date(a.collected_at).getTime())
+        .slice(0, limit);
+
+      return tweets;
+    } catch (error) {
+      console.error('최근 24시간 트윗 가져오기 오류:', error);
+      throw new Error('최근 24시간 트윗을 가져오는데 실패했습니다.');
+    }
+  }
+
   // 키워드 분석 결과 가져오기
   async getKeywordAnalysis(): Promise<any> {
     try {

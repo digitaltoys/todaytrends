@@ -49,6 +49,12 @@ npm run dev
 
 ### 3. 백엔드 데이터 수집기 실행
 
+#### 필요한 Python 패키지 설치
+```bash
+# 시스템 Python3에 필요한 패키지 설치
+python3 -m pip install tweepy python-dotenv couchdb
+```
+
 #### Twitter 데이터 수집
 ```bash
 # 프로젝트 루트에서

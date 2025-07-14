@@ -3,12 +3,13 @@ import type { Tweet } from '../../types';
 interface SearchAndFiltersProps {
   searchTerm: string;
   setSearchTerm: (term: string) => void;
-  viewMode: 'recent' | 'hashtag' | 'category';
+  viewMode: 'recent' | 'hashtag' | 'category' | '24hours';
   selectedCategory: string;
   loading: boolean;
   tweets: Tweet[];
   onSearch: (e: React.FormEvent) => void;
   onViewRecent: () => void;
+  onView24Hours: () => void;
   onCategoryFilter: (category: string) => void;
 }
 
@@ -21,6 +22,7 @@ export function SearchAndFilters({
   tweets,
   onSearch,
   onViewRecent,
+  onView24Hours,
   onCategoryFilter
 }: SearchAndFiltersProps) {
   // 카테고리별 개수 계산
@@ -76,6 +78,16 @@ export function SearchAndFilters({
             }`}
           >
             최근 트윗
+          </button>
+          <button
+            onClick={onView24Hours}
+            className={`px-4 py-2 rounded-lg font-medium ${
+              viewMode === '24hours'
+                ? 'bg-green-500 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            최근 24시간
           </button>
         </div>
       </div>
